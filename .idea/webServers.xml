@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="9c95c235-8e74-4abc-80fd-ec14b3d69562" name="ttt">
+        <fileTransfer rootFolder="/work/canyu" accessType="SFTP" host="login.rci.sc.edu" port="222" sshConfigId="ae6110bc-178a-497a-ab71-fa882e01cd08" sshConfig="titan">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
