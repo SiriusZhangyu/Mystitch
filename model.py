@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
 
+
 # helpers
 
 def pair(t):
@@ -131,14 +132,17 @@ class ViT(nn.Module):
 class FC(nn.Module):
 
 
-    def __init__(self, in_dim, n_hidden_1, n_hidden_2,  n_hidden_3,out_dim):
-        super(simpleNet, self).__init__()
-        self.layer1 = nn.Linear(in_dim, n_hidden_1)
-        self.layer2 = nn.Linear(n_hidden_1, n_hidden_2)
-        self.layer3 = nn.Linear(n_hidden_2, n_hidden_3)
-        self.layer4 = nn.Linear(n_hidden_3, out_dim)
+    def __init__(self):
+        super(FC, self).__init__()
+        self.layer1 = nn.Linear(2048, 1024)
+        self.layer2 = nn.Linear(1024, 512)
+        self.layer3 = nn.Linear(512, 512)
+        self.layer4 = nn.Linear(512, 3)
 
-    def forward(self, x):
+    def forward(self, x1, x2):
+        x1_deat=ViT(x1)
+        x2_feat=ViT(x2)
+        x=torch.cat(x1_deat,x2_feat)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
