@@ -26,5 +26,10 @@ class mydataset(data.Dataset):
 
         matrix=self. all_matrix[index]
         matrix=torch.from_numpy(matrix)
+        img1 = torch.from_numpy(img1)
+        img2 = torch.from_numpy(img2)
+        img1 = img1.view(3,512,512)
+        img2 = img2.view(3, 512, 512)
 
-        return img1, img2, matrix
+
+        return img1.float(), img2.float(), matrix

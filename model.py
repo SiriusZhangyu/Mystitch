@@ -1,151 +1,98 @@
 #!/usr/bin/env python 
 # -*- coding:utf-8 -*-
-import torch
+
 from torch import nn, einsum
 import torch.nn.functional as F
-
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange
+import torch
+import torch.nn as nn
 
 
-# helpers
 
-def pair(t):
-    return t if isinstance(t, tuple) else (t, t)
-
-# classes
-
-class PreNorm(nn.Module):
-    def __init__(self, dim, fn):
-        super().__init__()
-        self.norm = nn.LayerNorm(dim)
-        self.fn = fn
-    def forward(self, x, **kwargs):
-        return self.fn(self.norm(x), **kwargs)
-
-class FeedForward(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout = 0.):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, dim),
-            nn.Dropout(dropout)
+# 定义残差块ResBlock
+class ResBlock(nn.Module):
+    def __init__(self, inchannel, outchannel, stride=1):
+        super(ResBlock, self).__init__()
+        # 这里定义了残差块内连续的2个卷积层
+        self.left = nn.Sequential(
+            nn.Conv2d(inchannel, outchannel, kernel_size=3, stride=stride, padding=1, bias=False),
+            nn.BatchNorm2d(outchannel),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(outchannel, outchannel, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(outchannel)
         )
-    def forward(self, x):
-        return self.net(x)
-
-class Attention(nn.Module):
-    def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.):
-        super().__init__()
-        inner_dim = dim_head *  heads
-        project_out = not (heads == 1 and dim_head == dim)
-
-        self.heads = heads
-        self.scale = dim_head ** -0.5
-
-        self.attend = nn.Softmax(dim = -1)
-        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias = False)
-
-        self.to_out = nn.Sequential(
-            nn.Linear(inner_dim, dim),
-            nn.Dropout(dropout)
-        ) if project_out else nn.Identity()
+        self.shortcut = nn.Sequential()
+        if stride != 1 or inchannel != outchannel:
+            # shortcut，这里为了跟2个卷积层的结果结构一致，要做处理
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(inchannel, outchannel, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(outchannel)
+            )
 
     def forward(self, x):
-        b, n, _, h = *x.shape, self.heads
-        qkv = self.to_qkv(x).chunk(3, dim = -1)
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), qkv)
+        out = self.left(x)
+        # 将2个卷积层的输出跟处理过的x相加，实现ResNet的基本结构
+        out = out + self.shortcut(x)
+        out = F.relu(out)
 
-        dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
+        return out
 
-        attn = self.attend(dots)
 
-        out = einsum('b h i j, b h j d -> b h i d', attn, v)
-        out = rearrange(out, 'b h n d -> b n (h d)')
-        return self.to_out(out)
-
-class Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
-        super().__init__()
-        self.layers = nn.ModuleList([])
-        for _ in range(depth):
-            self.layers.append(nn.ModuleList([
-                PreNorm(dim, Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
-                PreNorm(dim, FeedForward(dim, mlp_dim, dropout = dropout))
-            ]))
-    def forward(self, x):
-        for attn, ff in self.layers:
-            x = attn(x) + x
-            x = ff(x) + x
-        return x
-
-class ViT(nn.Module):
-    def __init__(self, *, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, pool = 'cls', channels = 3, dim_head = 64, dropout = 0., emb_dropout = 0.):
-        super().__init__()
-        image_height, image_width = pair(image_size)
-        patch_height, patch_width = pair(patch_size)
-
-        assert image_height % patch_height == 0 and image_width % patch_width == 0, 'Image dimensions must be divisible by the patch size.'
-
-        num_patches = (image_height // patch_height) * (image_width // patch_width)
-        patch_dim = channels * patch_height * patch_width
-        assert pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
-
-        self.to_patch_embedding = nn.Sequential(
-            Rearrange('b c (h p1) (w p2) -> b (h w) (p1 p2 c)', p1 = patch_height, p2 = patch_width),
-            nn.Linear(patch_dim, dim),
+class ResNet(nn.Module):
+    def __init__(self, ResBlock, num_classes=10):
+        super(ResNet, self).__init__()
+        self.inchannel = 64
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU()
         )
+        self.layer1 = self.make_layer(ResBlock, 64, 2, stride=1)
+        self.layer2 = self.make_layer(ResBlock, 128, 2, stride=2)
+        self.layer3 = self.make_layer(ResBlock, 256, 2, stride=2)
+        self.layer4 = self.make_layer(ResBlock, 512, 2, stride=2)
+        self.fc = nn.Linear(512, num_classes)
 
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches + 1, dim))
-        self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
-        self.dropout = nn.Dropout(emb_dropout)
-
-        self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim, dropout)
-
-        self.pool = pool
-        self.to_latent = nn.Identity()
-
-        self.mlp_head = nn.Sequential(
-            nn.LayerNorm(dim),
-            nn.Linear(dim, num_classes)
-        )
-
-    def forward(self, img):
-        x = self.to_patch_embedding(img)
-        b, n, _ = x.shape
-
-        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b = b)
-        x = torch.cat((cls_tokens, x), dim=1)
-        x += self.pos_embedding[:, :(n + 1)]
-        x = self.dropout(x)
-
-        x = self.transformer(x)
-
-        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
-
-        x = self.to_latent(x)
-        return self.mlp_head(x)
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(512, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 3)
 
 
-class FC(nn.Module):
+    # 这个函数主要是用来，重复同一个残差块
+    def make_layer(self, block, channels, num_blocks, stride):
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.inchannel, channels, stride))
+            self.inchannel = channels
+        return nn.Sequential(*layers)
 
+    def forward(self, x1,x2):
+        # 在这里，整个ResNet18的结构就很清晰了
+        out1 = self.conv1(x1)
+        out1 = self.layer1(out1)
+        out1 = self.layer2(out1)
+        out1 = self.layer3(out1)
+        out1 = self.layer4(out1)
+        out1 = F.avg_pool2d(out1, 4)
+        out1 = out1.view(out1.size(0), -1)
 
-    def __init__(self):
-        super(FC, self).__init__()
-        self.layer1 = nn.Linear(2048, 1024)
-        self.layer2 = nn.Linear(1024, 512)
-        self.layer3 = nn.Linear(512, 512)
-        self.layer4 = nn.Linear(512, 3)
+        out2 = self.conv1(x2)
+        out2 = self.layer1(out2)
+        out2 = self.layer2(out2)
+        out2 = self.layer3(out2)
+        out2 = self.layer4(out2)
+        out2 = F.avg_pool2d(out2, 4)
+        out2 = out2.view(out2.size(0), -1)
 
-    def forward(self, x1, x2):
-        x1_deat=ViT(x1)
-        x2_feat=ViT(x2)
-        x=torch.cat(x1_deat,x2_feat)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x=torch.cat([out1,out2],dim=1)
+
+        x = self.fc1(x)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        x = self.fc4(x)
+
         return x
 
