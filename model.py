@@ -52,7 +52,7 @@ class ResNet(nn.Module):
         self.layer2 = self.make_layer(ResBlock, 128, 2, stride=2)
         self.layer3 = self.make_layer(ResBlock, 256, 2, stride=2)
         self.layer4 = self.make_layer(ResBlock, 512, 2, stride=2)
-        self.fc = nn.Linear(512, num_classes)
+        #self.fc = nn.Linear(512, num_classes)
 
         self.fc1 = nn.Linear(1024, 512)
         self.fc2 = nn.Linear(512, 512)
@@ -87,7 +87,8 @@ class ResNet(nn.Module):
         out2 = F.avg_pool2d(out2, 4)
         out2 = out2.view(out2.size(0), -1)
 
-        x=torch.cat([out1,out2],dim=1)
+        x=torch.cat((out1,out2),dim=1)
+
 
         x = self.fc1(x)
         x = self.fc2(x)

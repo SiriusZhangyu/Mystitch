@@ -65,12 +65,11 @@ def main():
 
 
             final_image=cv2.add(transform_image,template_image)
+            angle_and_dis_loss=torch.sqrt(torch.sum((output-gt)**2))
 
-            angle_loss=torch.sum(torch.sqrt(output[0]-gt[0])**2)
-            dis_loss=torch.sum(torch.sqrt((output[1]//2-256)**2+(256-output[2]//2)**2))
             img_loss=loss(final_image,template_image)
 
-            loss=angle_loss+dis_loss+img_loss
+            loss=angle_and_dis_loss+img_loss
 
             loss.backward()
             optimizer.step()
