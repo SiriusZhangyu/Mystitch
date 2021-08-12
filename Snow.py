@@ -23,6 +23,7 @@ class FEAT(nn.Module):
         self.upsample1 = nn.Upsample(scale_factor=2, mode='nearest')
         self.bn1 = nn.BatchNorm2d(512)
         self.upsample2 = nn.Upsample(scale_factor=4, mode='nearest')
+        self.bn2 = nn.BatchNorm2d(512)
         
     
     def forward(self,x1,x2):
@@ -55,7 +56,7 @@ class FEAT(nn.Module):
         feat1= torch.cat(x110,x210)
         feat2= torch.cat(x111,x211)
 
-        feat= feat1 + self.bn1(self.relu(self.upsample1(feat2)))
+        feat= feat1 + self.bn2(self.relu(self.upsample1(feat2)))
 
 
         output=self.bn1(self.relu(self.upsample2(feat)))
