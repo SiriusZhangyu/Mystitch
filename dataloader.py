@@ -26,4 +26,4 @@ class mydataset(data.Dataset):
 
         mask=cv2.imread(os.path.join(self.mask_path,img_name[index]))
 
-        return img1.float(), img2.float(), ma
+        return img1.float(), img2.float(), mask
